@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1042858689157",
+    "project_id": "wezawallet",
+    "storage_bucket": "wezawallet.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1042858689157:android:990c7b5f0b6d2f8b509fec",
+        "android_client_info": {
+          "package_name": "com.example.wezawallet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDO1D_vmr7VLwvVbHoN2lpl_rub0MhyL5o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
