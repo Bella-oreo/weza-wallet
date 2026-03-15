@@ -8,69 +8,130 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 
-data class SavingsGoal(val id: String = "", val name: String = "", val currentAmount: Double = 0.0, val targetAmount: Double = 0.0)
+data class SavingsGoal(
+    val id: String = "",
+    val name: String = "",
+    val currentAmount: Double = 0.0,
+    val targetAmount: Double = 0.0
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoalScreen(onBack: () -> Unit = {}) {
     val db = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val userId = auth.currentUser?.uid ?: ""
+
     var goals by remember { mutableStateOf<List<SavingsGoal>>(emptyList()) }
     var showDialog by remember { mutableStateOf(false) }
 
-    // Live sync with Firestore
-    LaunchedEffect(Unit) {
-        db.collection("users").document("bella_test").collection("goals")
-            .addSnapshotListener { snapshot, _ ->
-                goals = snapshot?.documents?.mapNotNull {
-                    it.toObject(SavingsGoal::class.java)?.copy(id = it.id)
-                } ?: emptyList()
-            }
+    // Live sync with Firestore using the dynamic userId
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            db.collection("users").document(userId).collection("goals")
+                .addSnapshotListener { snapshot, _ ->
+                    goals = snapshot?.documents?.mapNotNull {
+                        it.toObject(SavingsGoal::class.java)?.copy(id = it.id)
+                    } ?: emptyList()
+                }
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("My Savings Goals", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
             )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(16.dp)) {
             if (goals.isEmpty()) {
-                Text("No goals yet. Add one below!", modifier = Modifier.padding(bottom = 16.dp))
+                Text(
+                    "No goals yet. Start saving for something big!",
+                    modifier = Modifier.padding(vertical = 20.dp),
+                    color = Color.Gray
+                )
             }
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(goals) { goal ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    val progress = if (goal.targetAmount > 0) (goal.currentAmount / goal.targetAmount).toFloat() else 0f
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(goal.name, fontWeight = FontWeight.Bold)
-                            Text("KES ${goal.currentAmount} / ${goal.targetAmount}")
+                            Text(goal.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Visual Progress Bar
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "KES ${goal.currentAmount.toInt()} / ${goal.targetAmount.toInt()}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
                 }
             }
-            Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth()) {
+
+            Button(
+                onClick = { showDialog = true },
+                modifier = Modifier.fillMaxWidth().height(55.dp)
+            ) {
                 Text("Add New Goal")
             }
         }
 
         if (showDialog) {
-            AddGoalDialog(onDismiss = { showDialog = false }, onConfirm = { name, target ->
-                val data: Map<String, Any> = mapOf(
-                    "name" to name,
-                    "targetAmount" to (target.toDoubleOrNull() ?: 0.0),
-                    "currentAmount" to 0.0
-                )
-                db.collection("users").document("bella_test").collection("goals").add(data)
-                showDialog = false
-            })
+            AddGoalDialog(
+                onDismiss = { showDialog = false },
+                onConfirm = { name, target ->
+                    if (userId.isNotEmpty()) {
+                        val targetVal = target.toDoubleOrNull() ?: 0.0
+                        val goalData = mapOf(
+                            "name" to name,
+                            "targetAmount" to targetVal,
+                            "currentAmount" to 0.0
+                        )
+
+                        // 1. Save Goal
+                        db.collection("users").document(userId).collection("goals").add(goalData)
+
+                        // 2. Record in Transactions so it shows on Dashboard
+                        val record = TransactionRecord(
+                            title = "Started Goal: $name",
+                            amount = targetVal,
+                            type = "Goal",
+                            isNegative = false // Just a notification of a new goal
+                        )
+                        db.collection("users").document(userId).collection("transactions").add(record)
+
+                        showDialog = false
+                    }
+                }
+            )
         }
     }
 }
@@ -79,19 +140,36 @@ fun GoalScreen(onBack: () -> Unit = {}) {
 fun AddGoalDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Goal") },
+        title = { Text("New Savings Goal") },
         text = {
-            Column {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Goal Name") })
-                OutlinedTextField(value = target, onValueChange = { target = it }, label = { Text("Target Amount") })
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("What are you saving for?") },
+                    placeholder = { Text("e.g. New Laptop") }
+                )
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { target = it },
+                    label = { Text("Target Amount (KES)") }
+                )
             }
         },
-        confirmButton = { Button(onClick = { onConfirm(name, target) }) { Text("Add") } }
+        confirmButton = {
+            Button(onClick = { onConfirm(name, target) }) { Text("Create Goal") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
     )
 }
 
 @Preview(showBackground = true)
 @Composable
-fun GoalScreenPreview() { MaterialTheme { GoalScreen() } }
+fun GoalScreenPreview() {
+    MaterialTheme { GoalScreen() }
+}

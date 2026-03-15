@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.Timestamp
@@ -31,6 +33,9 @@ data class ExpenseCategory(
 @Composable
 fun ExpenseScreen(onBack: () -> Unit = {}) {
     val db = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val userId = auth.currentUser?.uid ?: "" // Dynamic User ID
+
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -44,18 +49,20 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
 
     val today = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
 
-    // Listen for changes in the expenses collection
-    LaunchedEffect(Unit) {
-        db.collection("users").document("bella_test").collection("expenses")
-            .addSnapshotListener { snapshot, _ ->
-                expenseCategories = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ExpenseCategory::class.java)?.copy(id = doc.id)
-                } ?: emptyList()
-            }
+    // Listen for changes in the expenses collection using dynamic userId
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            db.collection("users").document(userId).collection("expenses")
+                .addSnapshotListener { snapshot, _ ->
+                    expenseCategories = snapshot?.documents?.mapNotNull { doc ->
+                        doc.toObject(ExpenseCategory::class.java)?.copy(id = doc.id)
+                    } ?: emptyList()
+                }
+        }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }, //
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Expense Planner", fontWeight = FontWeight.Bold) },
@@ -69,7 +76,10 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
         bottomBar = {
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier.fillMaxWidth().padding(16.dp).height(55.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .height(55.dp)
             ) { Text("+ Plan New Expense") }
         }
     ) { padding ->
@@ -88,7 +98,6 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                             Text(expense.name, fontWeight = FontWeight.Bold)
                             Text("KES ${expense.amount}", color = Color.Gray)
                             if (expense.dueDate.isNotEmpty()) {
-                                // Overdue logic: Turns Red if past the due date
                                 Text(
                                     text = "Due Day: ${expense.dueDate}${if (isOverdue) " (OVERDUE)" else ""}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -98,29 +107,33 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                             }
                         }
 
-                        // Checkbox triggers the "Move to Send Money" automation
+                        // Checkbox triggers the payment automation
                         Checkbox(
                             checked = false,
                             onCheckedChange = { isChecked ->
-                                if (isChecked) {
-                                    val transactionData = mapOf(
-                                        "amount" to expense.amount,
-                                        "note" to "Paid: ${expense.name}",
-                                        "timestamp" to Timestamp.now()
+                                if (isChecked && userId.isNotEmpty()) {
+                                    // 1. Create a TransactionRecord for the Home Dashboard
+                                    val record = TransactionRecord(
+                                        title = "Paid: ${expense.name}",
+                                        amount = expense.amount,
+                                        type = "Expense",
+                                        isNegative = true // Shows as red/minus on dashboard
                                     )
 
-                                    // 1. Save to Transactions (Send Money History)
-                                    db.collection("users").document("bella_test").collection("transactions").add(transactionData)
+                                    // 2. Save to Transactions
+                                    db.collection("users").document(userId)
+                                        .collection("transactions").add(record)
 
-                                    // 2. Deduct from Balance
-                                    db.collection("users").document("bella_test").update("balance", FieldValue.increment(-expense.amount))
+                                    // 3. Deduct from Balance
+                                    db.collection("users").document(userId)
+                                        .update("balance", FieldValue.increment(-expense.amount))
 
-                                    // 3. Delete from Expense list (Make it disappear)
-                                    db.collection("users").document("bella_test").collection("expenses").document(expense.id).delete()
+                                    // 4. Delete from Planner list
+                                    db.collection("users").document(userId)
+                                        .collection("expenses").document(expense.id).delete()
 
-                                    // 4. Show the "Success" Toast
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("Payment Recorded!")
+                                        snackbarHostState.showSnackbar("Payment Recorded & Balance Updated!")
                                     }
                                 }
                             }
@@ -143,13 +156,15 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                 },
                 confirmButton = {
                     Button(onClick = {
-                        val data = mapOf(
-                            "name" to nameInput,
-                            "amount" to (amountInput.toDoubleOrNull() ?: 0.0),
-                            "dueDate" to dateInput
-                        )
-                        db.collection("users").document("bella_test").collection("expenses").add(data)
-                        nameInput = ""; amountInput = ""; dateInput = ""; showDialog = false
+                        if (userId.isNotEmpty()) {
+                            val data = mapOf(
+                                "name" to nameInput,
+                                "amount" to (amountInput.toDoubleOrNull() ?: 0.0),
+                                "dueDate" to dateInput
+                            )
+                            db.collection("users").document(userId).collection("expenses").add(data)
+                            nameInput = ""; amountInput = ""; dateInput = ""; showDialog = false
+                        }
                     }) { Text("Save Plan") }
                 }
             )

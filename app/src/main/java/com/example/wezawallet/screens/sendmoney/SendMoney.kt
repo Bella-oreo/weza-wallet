@@ -8,49 +8,132 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
-import com.google.firebase.Timestamp
+import com.google.firebase.firestore.Query
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SendMoneyScreen(onBack: () -> Unit = {}) { // FIXED parameter name
+fun SendMoneyScreen(onBack: () -> Unit = {}) {
     val db = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val userId = auth.currentUser?.uid ?: ""
+
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    var history by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var history by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
+    var isSending by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        db.collection("users").document("bella_test").collection("transactions")
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, _ ->
-                history = snapshot?.documents?.map { it.data ?: emptyMap() } ?: emptyList()
-            }
+    // Sync history for the specific logged-in user
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            db.collection("users").document(userId).collection("transactions")
+                .whereEqualTo("type", "Send") // Only show "Send" type in this screen's local history
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .addSnapshotListener { snapshot, _ ->
+                    history = snapshot?.documents?.mapNotNull {
+                        it.toObject(TransactionRecord::class.java)
+                    } ?: emptyList()
+                }
+        }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Send Money", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
 
-        OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("KES Amount") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("What for? (e.g. rent)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
+                label = { Text("Amount KES") },
+                modifier = Modifier.fillMaxWidth(),
+                prefix = { Text("KES ") },
+                enabled = !isSending
+            )
 
-        Button(
-            onClick = {
-                val valAmount = amount.toDoubleOrNull() ?: 0.0
-                val data: Map<String, Any> = mapOf("amount" to valAmount, "note" to note, "timestamp" to Timestamp.now())
-                db.collection("users").document("bella_test").collection("transactions").add(data)
-                // Subtract from balance
-                db.collection("users").document("bella_test").update("balance", FieldValue.increment(-valAmount))
-                amount = ""; note = ""
-            },
-            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-        ) { Text("Send & Save Entity") }
+            Spacer(modifier = Modifier.height(8.dp))
 
-        Text("Transaction History", modifier = Modifier.padding(bottom = 8.dp))
-        LazyColumn {
-            items(history) { tx ->
-                ListItem(headlineContent = { Text("${tx["note"]} - KES ${tx["amount"]}") })
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("Reason / Reference") },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("e.g. Rent, Dinner") },
+                enabled = !isSending
+            )
+
+            Button(
+                onClick = {
+                    val valAmount = amount.toDoubleOrNull() ?: 0.0
+                    if (userId.isNotEmpty() && valAmount > 0) {
+                        isSending = true
+
+                        // 1. Create TransactionRecord
+                        val record = TransactionRecord(
+                            title = if (note.isEmpty()) "Sent Money" else note,
+                            amount = valAmount,
+                            type = "Send",
+                            isNegative = true
+                        )
+
+                        // 2. Save to Transactions sub-collection
+                        db.collection("users").document(userId)
+                            .collection("transactions").add(record)
+
+                        // 3. Deduct from Balance
+                        db.collection("users").document(userId)
+                            .update("balance", FieldValue.increment(-valAmount))
+                            .addOnCompleteListener {
+                                isSending = false
+                                amount = ""; note = ""
+                            }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                enabled = amount.isNotEmpty() && !isSending
+            ) {
+                if (isSending) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color =
+                        Color.White)
+                } else {
+                    Text("Confirm Transfer")
+                }
+            }
+
+            Text(
+                "Recent Transfers",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(history) { tx ->
+                    ListItem(
+                        headlineContent = { Text(tx.title) },
+                        supportingContent = { Text("Today") },
+                        trailingContent = {
+                            Text("-KES ${tx.amount}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                }
             }
         }
     }
@@ -58,4 +141,8 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) { // FIXED parameter name
 
 @Preview(showBackground = true)
 @Composable
-fun SendMoneyPreview() { MaterialTheme { SendMoneyScreen() } }
+fun SendMoneyPreview() {
+    MaterialTheme {
+        SendMoneyScreen()
+    }
+}

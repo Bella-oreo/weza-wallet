@@ -1,6 +1,5 @@
 package com.example.wezawallet.screens.onboarding
 
-
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,42 +26,37 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Title from reference image
+        // Title
         Text(
             text = "Welcome to\nWeza Wallet",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF1A237E), // Deep navy blue
+            color = Color(0xFF1A237E),
             textAlign = TextAlign.Center,
             lineHeight = 36.sp
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Illustration Placeholder
-        // Replace R.drawable.onboarding_ill with your actual image resource
-        Box(
-            modifier = Modifier.size(280.dp),
-            contentAlignment = Alignment.Center
+        // Updated Illustration Section
+        Surface(
+            color = Color(0xFFE3F2FD), // Light blue background behind the image
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.size(280.dp)
         ) {
-            // If you don't have the image yet, use a simple colored box for now
-            Surface(
-                color = Color(0xFFE3F2FD),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Column(
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Illustration", color = Color(0xFF2F80ED))
-                }
-            }
+            Image(
+                painter = painterResource(id = R.drawable.onboarding),
+                contentDescription = "Weza Wallet Onboarding Illustration",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp), // Space inside the card
+                contentScale = ContentScale.Fit
+            )
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Subtitle from reference image
+        // Subtitle
         Text(
             text = "Smart Saving & Spending\nfor Your Future",
             fontSize = 18.sp,
@@ -72,15 +67,15 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // The Primary "Get Started" Button
+        // "Get Started" Button
         Button(
-            onClick = { onGetStartedClick() },
+            onClick = onGetStartedClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF2F80ED) // Signature Blue
+                containerColor = Color(0xFF2F80ED)
             )
         ) {
             Text(
@@ -93,7 +88,7 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Secondary "Learn More" Button
+        // "Learn More" Button
         TextButton(
             onClick = { /* Optional: Navigate to Info */ },
             modifier = Modifier.fillMaxWidth().height(56.dp)

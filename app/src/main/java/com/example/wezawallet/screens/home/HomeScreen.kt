@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -18,8 +19,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.wezawallet.usermodel.TransactionRecord
 import com.example.wezawallet.usermodel.User
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
@@ -30,41 +35,47 @@ fun HomeScreen(
     onSendMoneyClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
-    var userProfile by remember { mutableStateOf<User?>(null) }
     val db = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val userId = auth.currentUser?.uid ?: ""
 
-    // Fetching live data from your "bella_test" doc
-    LaunchedEffect(Unit) {
-        db.collection("users").document("bella_test")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e("Firestore", "Listen failed.", error)
-                    return@addSnapshotListener
+    var userProfile by remember { mutableStateOf<User?>(null) }
+    var transactions by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
+
+    // Fetching dynamic data based on Logged In User
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            // 1. Listen for Profile & Balance Changes
+            db.collection("users").document(userId)
+                .addSnapshotListener { snapshot, error ->
+                    if (snapshot != null && snapshot.exists()) {
+                        userProfile = snapshot.toObject(User::class.java)
+                    }
                 }
-                if (snapshot != null && snapshot.exists()) {
-                    userProfile = snapshot.toObject(User::class.java)
+
+            // 2. Listen for the 5 Most Recent Transactions
+            db.collection("users").document(userId).collection("transactions")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(5)
+                .addSnapshotListener { snapshot, _ ->
+                    transactions = snapshot?.documents?.mapNotNull {
+                        it.toObject(TransactionRecord::class.java)
+                    } ?: emptyList()
                 }
-            }
+        }
     }
-
-    val transactions = listOf(
-        Transaction("Supermarket", "Today", 1200.0, true),
-        Transaction("Transport", "Today", 300.0, true)
-    )
 
     Scaffold(containerColor = Color(0xFFF5F6FA)) { padding ->
         LazyColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             item {
                 Spacer(modifier = Modifier.height(16.dp))
-                HomeHeader(userName = userProfile?.name ?: "Loading...", onProfileClick = onProfileClick)
+                HomeHeader(userName = userProfile?.name ?: "User", onProfileClick = onProfileClick)
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Card with Horizontal Gradient & Divider
-                BalanceCard(balance = userProfile?.balance?.toDouble() ?: 0.0, tokenPoints = 320)
+                BalanceCard(balance = userProfile?.balance?.toDouble() ?: 0.0, tokenPoints = 0)
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Color-coded Actions
                 QuickActionsRow(onAddMoneyClick, onSendMoneyClick, onGoalClick, onExpenseClick)
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -72,8 +83,29 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            items(transactions.size) { index ->
-                TransactionItem(transactions[index])
+            // Display dynamic transactions from Firebase
+            items(transactions) { tx ->
+                val dateStr = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(tx.timestamp.toDate())
+                TransactionItem(
+                    Transaction(
+                        title = tx.title,
+                        date = dateStr,
+                        amount = tx.amount,
+                        isNegative = tx.isNegative
+                    )
+                )
+            }
+
+            if (transactions.isEmpty()) {
+                item {
+                    Text(
+                        "No recent activity",
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
             }
 
             item {
@@ -85,6 +117,7 @@ fun HomeScreen(
     }
 }
 
+// UI Components (BalanceCard, QuickActions, etc.) remain as you designed them
 @Composable
 fun BalanceCard(balance: Double, tokenPoints: Int) {
     Card(
@@ -105,15 +138,7 @@ fun BalanceCard(balance: Double, tokenPoints: Int) {
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                // The sleek divider from the target design
-//                HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 1.dp)
-//                Spacer(modifier = Modifier.height(12.dp))
-//                Text(
-//                    text = "Token Points : $tokenPoints",
-//                    color = Color.White.copy(alpha = 0.9f),
-//                    style = MaterialTheme.typography.bodyMedium
-//                )
+                Text(text = "Available Balance", color = Color.White.copy(alpha = 0.7f))
             }
         }
     }
@@ -156,12 +181,11 @@ fun TransactionItem(transaction: Transaction) {
     ) {
         Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Fixed the typo from image_dd269e.jpg here
                 Box(modifier = Modifier.size(44.dp).background(Color(0xFFF0F2F8), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = if (transaction.title == "Transport") Icons.Default.DirectionsBus else Icons.Default.ShoppingCart,
+                        imageVector = if (transaction.isNegative) Icons.Default.ArrowOutward else Icons.Default.ArrowDownward,
                         contentDescription = null,
-                        tint = Color(0xFF2F80ED),
+                        tint = if (transaction.isNegative) Color(0xFFEB5757) else Color(0xFF27AE60),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -172,7 +196,7 @@ fun TransactionItem(transaction: Transaction) {
                 }
             }
             Text(
-                text = "${if (transaction.isNegative) "-" else ""}KES ${String.format(Locale.getDefault(), "%,.0f", transaction.amount)}",
+                text = "${if (transaction.isNegative) "-" else "+"} KES ${String.format(Locale.getDefault(), "%,.0f", transaction.amount)}",
                 color = if (transaction.isNegative) Color(0xFFEB5757) else Color(0xFF27AE60),
                 fontWeight = FontWeight.ExtraBold
             )
@@ -201,7 +225,7 @@ fun WeeklySpendingChart() {
                         modifier = Modifier
                             .width(16.dp)
                             .fillMaxHeight(heightRatio)
-                            .background(Color(0xFF2F80ED).copy(alpha = 0.6f), RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                            .background(Color(0xFF2F80ED).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                     )
                 }
             }
@@ -213,7 +237,7 @@ fun WeeklySpendingChart() {
 fun HomeHeader(userName: String, onProfileClick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
-            Text(text = "Home / Dashboard", style = MaterialTheme.typography.labelLarge, color = Color.Gray)
+            Text(text = "WezaWallet Dashboard", style = MaterialTheme.typography.labelLarge, color = Color.Gray)
             Text(text = "Hello, $userName!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         IconButton(onClick = onProfileClick) {
@@ -232,24 +256,10 @@ fun SectionHeader() {
 
 data class Transaction(val title: String, val date: String, val amount: Double, val isNegative: Boolean)
 
-/* ----------------------- PREVIEW ----------------------- */
-
-@Preview(showBackground = true, showSystemUi = true)
+@Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        Box(modifier = Modifier.background(Color(0xFFF5F6FA)).fillMaxSize().padding(16.dp)) {
-            Column {
-                HomeHeader(userName = "Bella Ndirangu", onProfileClick = {})
-                Spacer(modifier = Modifier.height(20.dp))
-                BalanceCard(balance = 1000.0, tokenPoints = 320)
-                Spacer(modifier = Modifier.height(24.dp))
-                QuickActionsRow({}, {}, {}, {})
-                Spacer(modifier = Modifier.height(24.dp))
-                SectionHeader()
-                TransactionItem(Transaction("Supermarket", "Today", 1200.0, true))
-                WeeklySpendingChart()
-            }
-        }
+        HomeScreen()
     }
 }
