@@ -1,19 +1,30 @@
 package com.example.wezawallet.screens.addmoney
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.wezawallet.usermodel.TransactionRecord
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.Query
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +35,22 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
 
     var amount by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
+    var recentTopUps by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
+
+    // IMPROVEMENT 6: Fetch recent "Add" transactions for this specific screen
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            db.collection("users").document(userId).collection("transactions")
+                .whereEqualTo("type", "Add")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(5)
+                .addSnapshotListener { snapshot, _ ->
+                    recentTopUps = snapshot?.documents?.mapNotNull {
+                        it.toObject(TransactionRecord::class.java)
+                    } ?: emptyList()
+                }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -43,82 +70,121 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                 .padding(padding)
                 .padding(24.dp)
         ) {
-            Text(
-                text = "Enter Amount",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
-                label = { Text("KES Amount") },
+            // Money In Branding (Green Accent)
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("e.g. 1000") },
-                prefix = { Text("KES ") },
-                singleLine = true,
-                enabled = !isSubmitting
-            )
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF27AE60).copy(alpha = 0.05f)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Enter Amount to Deposit",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFF27AE60)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
+                        label = { Text("KES Amount") },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g. 1000") },
+                        prefix = { Text("KES ") },
+                        singleLine = true,
+                        enabled = !isSubmitting,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF27AE60),
+                            focusedLabelColor = Color(0xFF27AE60)
+                        )
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // IMPROVEMENT 3: Green "Confirm" Button
             Button(
                 onClick = {
                     val value = amount.toDoubleOrNull() ?: 0.0
                     if (userId.isNotEmpty() && value > 0) {
                         isSubmitting = true
-
-                        // 1. Update the main balance in Firestore
-                        db.collection("users").document(userId)
-                            .update("balance", FieldValue.increment(value))
-
-                        // 2. Create the Transaction Record with a Timestamp for sorting
                         val record = TransactionRecord(
                             title = "Wallet Top-up",
                             amount = value,
                             type = "Add",
                             isNegative = false,
-                            timestamp = Timestamp.now() // Added this for proper sorting
+                            timestamp = Timestamp.now()
                         )
+
+                        // Atomic Update: Balance + Transaction
+                        db.collection("users").document(userId)
+                            .update("balance", FieldValue.increment(value))
 
                         db.collection("users").document(userId)
                             .collection("transactions")
                             .add(record)
                             .addOnSuccessListener {
                                 isSubmitting = false
-                                onBack()
-                            }
-                            .addOnFailureListener {
-                                isSubmitting = false
+                                amount = "" // Clear field instead of closing to show history update
                             }
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(55.dp),
-                enabled = amount.isNotEmpty() && !isSubmitting,
-                shape = MaterialTheme.shapes.medium
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = amount.isNotEmpty() && amount != "0" && !isSubmitting,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF27AE60)),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else {
-                    Text("Confirm Top Up", fontWeight = FontWeight.Bold)
+                    Text("Confirm Top Up", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            Text(
-                text = "The amount will be added to your balance immediately.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
-            )
+            // RECENT TOP-UPS SECTION (Point 6)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Recent Top-ups",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (recentTopUps.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                    Text("No recent top-ups found.", color = Color.Gray)
+                }
+            }
+
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(recentTopUps) { tx ->
+                    val dateStr = tx.timestamp?.let {
+                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                    } ?: ""
+
+                    ListItem(
+                        headlineContent = { Text("Funds Added", fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text(dateStr) },
+                        trailingContent = {
+                            Text(
+                                "+KES ${String.format("%,.0f", tx.amount)}",
+                                color = Color(0xFF27AE60),
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.4f))
+                }
+            }
         }
     }
 }
@@ -126,7 +192,5 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun AddMoneyPreview() {
-    MaterialTheme {
-        AddMoneyScreen()
-    }
+    MaterialTheme { AddMoneyScreen() }
 }

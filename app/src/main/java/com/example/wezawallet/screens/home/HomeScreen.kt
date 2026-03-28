@@ -24,7 +24,6 @@ import com.example.wezawallet.usermodel.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -46,7 +45,6 @@ fun HomeScreen(
 
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
-            // Listen for User Profile & Balance
             db.collection("users").document(userId)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
@@ -54,7 +52,6 @@ fun HomeScreen(
                     }
                 }
 
-            // Listen for Recent Transactions (Limit 5)
             db.collection("users").document(userId).collection("transactions")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .limit(5)
@@ -81,6 +78,7 @@ fun HomeScreen(
                 BalanceCard(balance = userProfile?.balance ?: 0.0)
 
                 Spacer(modifier = Modifier.height(24.dp))
+                // IMPROVEMENT: Action Row with Color-Coded Identity
                 QuickActionsRow(onAddMoneyClick, onSendMoneyClick, onGoalClick, onExpenseClick)
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -100,30 +98,29 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            items(transactions) { tx ->
-                // Null-safe check for the Firestore Timestamp
-                val dateStr = tx.timestamp?.let {
-                    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
-                } ?: "Syncing..."
-
-                TransactionItem(
-                    title = tx.title,
-                    date = dateStr,
-                    amount = tx.amount,
-                    type = tx.type,
-                    isNegative = tx.isNegative
-                )
-            }
-
             if (transactions.isEmpty()) {
                 item {
                     Text(
-                        "No recent transactions",
+                        "No recent transactions. Start by adding money!",
                         color = Color.Gray,
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
+            }
+
+            items(transactions) { tx ->
+                val dateStr = tx.timestamp?.let {
+                    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                } ?: "Syncing..."
+
+                // IMPROVEMENT: Logical color coding for the list items
+                TransactionItem(
+                    title = tx.title,
+                    date = dateStr,
+                    amount = tx.amount,
+                    type = tx.type
+                )
             }
 
             item {
@@ -135,50 +132,21 @@ fun HomeScreen(
     }
 }
 
-/* ----------------------- UI COMPONENTS ----------------------- */
-
 @Composable
-fun BalanceCard(balance: Double) {
-    Card(
-        modifier = Modifier.fillMaxWidth().height(140.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.horizontalGradient(listOf(Color(0xFF009688), Color(0xFF26A69A))))
-                .padding(24.dp)
-        ) {
-            Column {
-                Text(
-                    text = "KES ${String.format(Locale.getDefault(), "%,.0f", balance)}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(text = "Available Balance", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-            }
-        }
+fun TransactionItem(title: String, date: String, amount: Double, type: String) {
+    // IMPROVEMENT: Color logic for Red (Out), Green (In), Gold (Goal)
+    val (icon, statusColor, prefix) = when (type) {
+        "Add" -> Triple(Icons.Default.AccountBalanceWallet, Color(0xFF27AE60), "+")
+        "Send", "Expense" -> Triple(Icons.AutoMirrored.Filled.Send, Color(0xFFEB5757), "-")
+        "Goal" -> Triple(Icons.Default.Star, Color(0xFFFFB800), "")
+        else -> Triple(Icons.Default.Payments, Color(0xFF2F80ED), "")
     }
-}
-
-@Composable
-fun TransactionItem(title: String, date: String, amount: Double, type: String, isNegative: Boolean) {
-    val icon = when {
-        type == "Add" -> Icons.Default.AccountBalanceWallet
-        type == "Goal" -> Icons.Default.Star
-        title.contains("Rent", true) -> Icons.Default.Home
-        title.contains("Food", true) || title.contains("Lunch", true) -> Icons.Default.Restaurant
-        else -> Icons.Default.Payments
-    }
-
-    val statusColor = if (isNegative) Color(0xFFEB5757) else Color(0xFF27AE60)
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -201,7 +169,7 @@ fun TransactionItem(title: String, date: String, amount: Double, type: String, i
                 }
             }
             Text(
-                text = "${if (isNegative) "-" else "+"} KES ${String.format(Locale.getDefault(), "%,.0f", amount)}",
+                text = "$prefix KES ${String.format(Locale.getDefault(), "%,.0f", amount)}",
                 color = statusColor,
                 fontWeight = FontWeight.ExtraBold
             )
@@ -212,10 +180,36 @@ fun TransactionItem(title: String, date: String, amount: Double, type: String, i
 @Composable
 fun QuickActionsRow(onAdd: () -> Unit, onSend: () -> Unit, onGoal: () -> Unit, onExpense: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        QuickActionItem("Add Money", Icons.Default.Add, Color(0xFFFFB800), onAdd)
-        QuickActionItem("Send", Icons.AutoMirrored.Filled.Send, Color(0xFF2F80ED), onSend)
-        QuickActionItem("Goals", Icons.Default.Star, Color(0xFF27AE60), onGoal)
-        QuickActionItem("Expenses", Icons.Default.CardGiftcard, Color(0xFFEB5757), onExpense)
+        QuickActionItem("Add Money", Icons.Default.Add, Color(0xFF27AE60), onAdd) // Green
+        QuickActionItem("Send", Icons.AutoMirrored.Filled.Send, Color(0xFFEB5757), onSend) // Red
+        QuickActionItem("Goals", Icons.Default.Star, Color(0xFFFFB800), onGoal) // Gold
+        QuickActionItem("Expenses", Icons.Default.CardGiftcard, Color(0xFFEB5757), onExpense) // Red
+    }
+}
+
+@Composable
+fun BalanceCard(balance: Double) {
+    Card(
+        modifier = Modifier.fillMaxWidth().height(140.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(brush = Brush.horizontalGradient(listOf(Color(0xFF009688), Color(0xFF26A69A))))
+                .padding(24.dp)
+        ) {
+            Column {
+                Text(
+                    text = "KES ${String.format(Locale.getDefault(), "%,.2f", balance)}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(text = "Available Balance", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+            }
+        }
     }
 }
 
@@ -226,7 +220,7 @@ fun QuickActionItem(title: String, icon: ImageVector, color: Color, onClick: () 
             modifier = Modifier.size(60.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(3.dp)
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = title, tint = color)
@@ -245,7 +239,7 @@ fun HomeHeader(userName: String, onProfileClick: () -> Unit) {
             Text(text = "Hello, $userName!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         IconButton(onClick = onProfileClick) {
-            Icon(Icons.Default.AccountCircle, "Profile", modifier = Modifier.size(36.dp), tint = Color(0xFF2F80ED))
+            Icon(Icons.Default.AccountCircle, "Profile", modifier = Modifier.size(40.dp), tint = Color(0xFF2F80ED))
         }
     }
 }
@@ -255,10 +249,11 @@ fun WeeklySpendingChart() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("Weekly Spending", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text("Weekly Spending Habits", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(20.dp))
             Row(
                 modifier = Modifier.fillMaxWidth().height(100.dp),
@@ -268,9 +263,9 @@ fun WeeklySpendingChart() {
                 listOf(0.4f, 0.6f, 0.3f, 0.5f, 0.4f, 0.7f, 0.9f).forEach { height ->
                     Box(
                         modifier = Modifier
-                            .width(16.dp)
+                            .width(18.dp)
                             .fillMaxHeight(height)
-                            .background(Color(0xFF2F80ED).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2F80ED).copy(alpha = 0.6f), RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
                     )
                 }
             }
@@ -278,12 +273,8 @@ fun WeeklySpendingChart() {
     }
 }
 
-/* ----------------------- PREVIEW ----------------------- */
-
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun HomeScreenPreview() {
-    MaterialTheme {
-        HomeScreen()
-    }
+    MaterialTheme { HomeScreen() }
 }

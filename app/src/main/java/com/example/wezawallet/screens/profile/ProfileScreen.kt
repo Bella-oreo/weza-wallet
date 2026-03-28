@@ -1,29 +1,22 @@
 package com.example.wezawallet.screens.profile
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Help
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,22 +25,37 @@ fun ProfileScreen(
     onLogoutClick: () -> Unit = {}
 ) {
     val auth = FirebaseAuth.getInstance()
-    val currentUser = auth.currentUser
-    var profileImageUri by remember { mutableStateOf<Uri?>(null) }
-    var showHelp by remember { mutableStateOf(false) }
+    val db = FirebaseFirestore.getInstance()
+    val userId = auth.currentUser?.uid ?: ""
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        profileImageUri = uri
+    // State for user data
+    var name by remember { mutableStateOf("Loading...") }
+    var email by remember { mutableStateOf(auth.currentUser?.email ?: "") }
+    var phone by remember { mutableStateOf("") }
+    var isEditing by remember { mutableStateOf(false) }
+
+    // 1. PERSISTENCE: Fetch data from Firestore when the screen loads
+    LaunchedEffect(userId) {
+        if (userId.isNotEmpty()) {
+            db.collection("users").document(userId).get()
+                .addOnSuccessListener { document ->
+                    if (document.exists()) {
+                        name = document.getString("name") ?: "No Name Set"
+                        phone = document.getString("phone") ?: ""
+                    }
+                }
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("My Profile", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                title = { Text("Profile Settings", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onHistoryClick) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
             )
         }
     ) { padding ->
@@ -55,135 +63,104 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Icon(
+                Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size(80.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .clickable { launcher.launch("image/*") },
-                contentAlignment = Alignment.Center
-            ) {
-                if (profileImageUri != null) {
-                    AsyncImage(
-                        model = profileImageUri,
-                        contentDescription = "Profile Photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.AddAPhoto,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            "Upload",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
+            if (isEditing) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Full Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text("Phone Number") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Text(name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(email, color = Color.Gray)
+                if (phone.isNotEmpty()) Text(phone, color = Color.Gray)
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = currentUser?.email ?: "user@example.com",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = "Account Status: Active",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            Text(
-                text = "Wallet Overview",
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                )
+            // Action Buttons
+            Button(
+                onClick = {
+                    if (isEditing) {
+                        // 2. PERSISTENCE: Save changes back to Firestore
+                        val updates = mapOf("name" to name, "phone" to phone)
+                        db.collection("users").document(userId).update(updates)
+                    }
+                    isEditing = !isEditing
+                },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Activity Summary", fontWeight = FontWeight.Bold)
-                    Text(
-                        "Summary of your expenses, savings, and transfers will appear here once active.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                Text(if (isEditing) "Save Profile" else "Edit Profile")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            ProfileMenuItem(icon = Icons.Default.Settings, label = "Account Settings", onClick = {})
-            ProfileMenuItem(icon = Icons.Default.History, label = "Transaction History", onClick = onHistoryClick)
-            ProfileMenuItem(icon = Icons.Default.Help, label = "Help & Support", onClick = { showHelp = !showHelp })
-
-            if (showHelp) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Contact Developer", fontWeight = FontWeight.Bold)
-                        Text("Email: bellandirangu46@gmail.com", style = MaterialTheme.typography.bodyMedium)
-                        Text("Phone: 0703811464", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
+            OutlinedButton(
+                onClick = onHistoryClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.History, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Transaction History")
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
+            // Fixed the deprecated Help Icon warning from your screenshot
+            OutlinedButton(
+                onClick = { /* Support Logic */ },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Help, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Get Help")
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            TextButton(
                 onClick = {
                     auth.signOut()
                     onLogoutClick()
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
             ) {
-                Text("Logout", fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.ExitToApp, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Logout")
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
-    }
-}
-
-@Composable
-fun ProfileMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Column {
-        ListItem(
-            headlineContent = { Text(label, fontWeight = FontWeight.Medium) },
-            leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
-            modifier = Modifier.clickable { onClick() }
-        )
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
     }
 }
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun ProfileScreenPreview() {
+    // Wrapping in MaterialTheme ensures the colors and fonts match your app
     MaterialTheme {
-        ProfileScreen()
+        // We pass empty lambdas {} for the navigation clicks in the preview
+        ProfileScreen(
+            onHistoryClick = {},
+            onLogoutClick = {}
+        )
     }
 }

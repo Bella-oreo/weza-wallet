@@ -1,23 +1,30 @@
 package com.example.wezawallet.screens.sendmoney
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.wezawallet.usermodel.TransactionRecord
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Query
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,12 +38,13 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
     var history by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
     var isSending by remember { mutableStateOf(false) }
 
-    // Sync history for the specific logged-in user
+    // IMPROVEMENT 6: List "Recent Transfers" specific to this screen
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("transactions")
                 .whereEqualTo("type", "Send")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(10) // Only show the last 10 for performance
                 .addSnapshotListener { snapshot, _ ->
                     history = snapshot?.documents?.mapNotNull {
                         it.toObject(TransactionRecord::class.java)
@@ -59,85 +67,115 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
 
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
-                label = { Text("Amount KES") },
-                modifier = Modifier.fillMaxWidth(),
-                prefix = { Text("KES ") },
-                enabled = !isSending,
-                singleLine = true
-            )
+            // Money Out Branding (Red Accent)
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFEB5757).copy(alpha = 0.05f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
+                        label = { Text("How much?") },
+                        modifier = Modifier.fillMaxWidth(),
+                        prefix = { Text("KES ") },
+                        enabled = !isSending,
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFEB5757),
+                            focusedLabelColor = Color(0xFFEB5757)
+                        )
+                    )
 
-            Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-            OutlinedTextField(
-                value = note,
-                onValueChange = { note = it },
-                label = { Text("Reason / Reference") },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("e.g. Rent, Dinner") },
-                enabled = !isSending,
-                singleLine = true
-            )
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        label = { Text("Who is this for? / Reason") },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g. John Doe, Rent") },
+                        enabled = !isSending,
+                        singleLine = true
+                    )
+                }
+            }
 
+            // IMPROVEMENT: Validation & Red Color (Point 2)
             Button(
                 onClick = {
                     val valAmount = amount.toDoubleOrNull() ?: 0.0
                     if (userId.isNotEmpty() && valAmount > 0) {
                         isSending = true
-
-                        // 1. Create TransactionRecord with Timestamp
                         val record = TransactionRecord(
                             title = if (note.isEmpty()) "Sent Money" else note,
                             amount = valAmount,
                             type = "Send",
                             isNegative = true,
-                            timestamp = Timestamp.now() // Added for sorting
+                            timestamp = Timestamp.now()
                         )
 
-                        // 2. Save to Transactions sub-collection
-                        db.collection("users").document(userId)
-                            .collection("transactions").add(record)
-
-                        // 3. Deduct from Balance
+                        db.collection("users").document(userId).collection("transactions").add(record)
                         db.collection("users").document(userId)
                             .update("balance", FieldValue.increment(-valAmount))
                             .addOnCompleteListener {
                                 isSending = false
                                 amount = ""; note = ""
-                                // Optional: You can navigate back or stay to see the history update
                             }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                enabled = amount.isNotEmpty() && !isSending,
-                shape = MaterialTheme.shapes.medium
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = amount.isNotEmpty() && amount != "0" && !isSending,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEB5757)), // RED
+                shape = RoundedCornerShape(16.dp)
             ) {
                 if (isSending) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else {
-                    Text("Confirm Transfer", fontWeight = FontWeight.Bold)
+                    Text("Confirm Transfer", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
 
-            Text(
-                "Recent Transfers",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // RECENT TRANSFERS SECTION (Point 6)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Recent Send History",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (history.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No recent transfers found.", color = Color.Gray)
+                }
+            }
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(history) { tx ->
+                    val dateStr = tx.timestamp?.let {
+                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                    } ?: ""
+
                     ListItem(
-                        headlineContent = { Text(tx.title) },
-                        supportingContent = { Text("Completed") },
+                        headlineContent = { Text(tx.title, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text(dateStr) },
                         trailingContent = {
-                            Text("-KES ${tx.amount}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                        }
+                            Text(
+                                "-KES ${String.format("%,.0f", tx.amount)}",
+                                color = Color(0xFFEB5757),
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    HorizontalDivider(thickness = 0.5.dp)
+                    HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
                 }
             }
         }
