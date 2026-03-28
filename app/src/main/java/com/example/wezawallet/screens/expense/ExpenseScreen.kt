@@ -34,7 +34,7 @@ data class ExpenseCategory(
 fun ExpenseScreen(onBack: () -> Unit = {}) {
     val db = FirebaseFirestore.getInstance()
     val auth = FirebaseAuth.getInstance()
-    val userId = auth.currentUser?.uid ?: "" // Dynamic User ID
+    val userId = auth.currentUser?.uid ?: ""
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -49,7 +49,6 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
 
     val today = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
 
-    // Listen for changes in the expenses collection using dynamic userId
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("expenses")
@@ -72,73 +71,82 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                     }
                 }
             )
-        },
-        bottomBar = {
-            Button(
-                onClick = { showDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .height(55.dp)
-            ) { Text("+ Plan New Expense") }
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
-            items(expenseCategories) { expense ->
-                val dueDay = expense.dueDate.filter { it.isDigit() }.toIntOrNull() ?: 0
-                val isOverdue = dueDay != 0 && today > dueDay
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
+                    items(expenseCategories) { expense ->
+                        val dueDay = expense.dueDate.filter { it.isDigit() }.toIntOrNull() ?: 0
+                        val isOverdue = dueDay != 0 && today > dueDay
 
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(expense.name, fontWeight = FontWeight.Bold)
-                            Text("KES ${expense.amount}", color = Color.Gray)
-                            if (expense.dueDate.isNotEmpty()) {
-                                Text(
-                                    text = "Due Day: ${expense.dueDate}${if (isOverdue) " (OVERDUE)" else ""}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isOverdue) Color.Red else MaterialTheme.colorScheme.primary,
-                                    fontWeight = if (isOverdue) FontWeight.Bold else FontWeight.Normal
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isOverdue) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(expense.name, fontWeight = FontWeight.Bold)
+                                    Text("KES ${expense.amount}", color = Color.Gray)
+                                    if (expense.dueDate.isNotEmpty()) {
+                                        Text(
+                                            text = "Due Day: ${expense.dueDate}${if (isOverdue) " (OVERDUE)" else ""}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isOverdue) Color.Red else MaterialTheme.colorScheme.primary,
+                                            fontWeight = if (isOverdue) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+
+                                Checkbox(
+                                    checked = false,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked && userId.isNotEmpty()) {
+                                            // Create record with Timestamp for proper dashboard sorting
+                                            val record = TransactionRecord(
+                                                title = "Paid: ${expense.name}",
+                                                amount = expense.amount,
+                                                type = "Expense",
+                                                isNegative = true,
+                                                timestamp = Timestamp.now()
+                                            )
+
+                                            db.collection("users").document(userId)
+                                                .collection("transactions").add(record)
+
+                                            db.collection("users").document(userId)
+                                                .update("balance", FieldValue.increment(-expense.amount))
+
+                                            db.collection("users").document(userId)
+                                                .collection("expenses").document(expense.id).delete()
+
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Payment Recorded & Balance Updated!")
+                                            }
+                                        }
+                                    }
                                 )
                             }
                         }
-
-                        // Checkbox triggers the payment automation
-                        Checkbox(
-                            checked = false,
-                            onCheckedChange = { isChecked ->
-                                if (isChecked && userId.isNotEmpty()) {
-                                    // 1. Create a TransactionRecord for the Home Dashboard
-                                    val record = TransactionRecord(
-                                        title = "Paid: ${expense.name}",
-                                        amount = expense.amount,
-                                        type = "Expense",
-                                        isNegative = true // Shows as red/minus on dashboard
-                                    )
-
-                                    // 2. Save to Transactions
-                                    db.collection("users").document(userId)
-                                        .collection("transactions").add(record)
-
-                                    // 3. Deduct from Balance
-                                    db.collection("users").document(userId)
-                                        .update("balance", FieldValue.increment(-expense.amount))
-
-                                    // 4. Delete from Planner list
-                                    db.collection("users").document(userId)
-                                        .collection("expenses").document(expense.id).delete()
-
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Payment Recorded & Balance Updated!")
-                                    }
-                                }
-                            }
-                        )
                     }
+                }
+
+                Button(
+                    onClick = { showDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .height(55.dp),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Text("+ Plan New Expense", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -155,8 +163,8 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                     }
                 },
                 confirmButton = {
-                    Button(onClick = {
-                        if (userId.isNotEmpty()) {
+                    TextButton(onClick = {
+                        if (userId.isNotEmpty() && nameInput.isNotEmpty()) {
                             val data = mapOf(
                                 "name" to nameInput,
                                 "amount" to (amountInput.toDoubleOrNull() ?: 0.0),
@@ -166,13 +174,16 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                             nameInput = ""; amountInput = ""; dateInput = ""; showDialog = false
                         }
                     }) { Text("Save Plan") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDialog = false }) { Text("Cancel") }
                 }
             )
         }
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun ExpensePreview() {
     MaterialTheme {

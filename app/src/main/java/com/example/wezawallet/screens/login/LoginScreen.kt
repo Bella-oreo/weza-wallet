@@ -18,8 +18,8 @@ import com.google.firebase.auth.FirebaseAuth
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit = {},
-    onSignUpSuccess: () -> Unit = {},
-    onGoogleClick: () -> Unit = {}
+    onSignUpSuccess: () -> Unit = {}, // Added default value
+    onGoogleClick: () -> Unit = {}     // Added default value
 ) {
     val auth = FirebaseAuth.getInstance()
     var isLogin by remember { mutableStateOf(true) }
@@ -97,7 +97,12 @@ fun LoginScreen(
             }
 
             errorMessage?.let {
-                Text(it, color = Color.Red, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+                Text(
+                    text = it,
+                    color = Color.Red,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -150,7 +155,7 @@ private fun ToggleButton(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(50.dp))
-            .background(if (selected) Color(0xFF673AB7) else Color.Transparent)
+            .background(if (selected) Color(0xFF2F80ED) else Color.Transparent) // Changed to Weza Blue for consistency
             .clickable { onClick() }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
@@ -163,8 +168,7 @@ private fun ToggleButton(
     }
 }
 
-// THE PREVIEW COMPOSABLE
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun LoginScreenPreview() {
     MaterialTheme {

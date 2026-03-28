@@ -3,6 +3,8 @@ package com.example.wezawallet.screens.onboarding
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,18 +40,20 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Updated Illustration Section
+        // Illustration Section
         Surface(
-            color = Color(0xFFE3F2FD), // Light blue background behind the image
+            color = Color(0xFFE3F2FD),
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier.size(280.dp)
         ) {
+            // Check: Do you have 'onboarding.png' in your res/drawable folder?
+            // If not, this line causes the "Unresolved reference" in NavHost!
             Image(
                 painter = painterResource(id = R.drawable.onboarding),
                 contentDescription = "Weza Wallet Onboarding Illustration",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp), // Space inside the card
+                    .padding(16.dp),
                 contentScale = ContentScale.Fit
             )
         }
@@ -88,9 +92,8 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // "Learn More" Button
         TextButton(
-            onClick = { /* Optional: Navigate to Info */ },
+            onClick = { /* Optional */ },
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
             Text(
@@ -102,7 +105,7 @@ fun OnboardingScreen(onGetStartedClick: () -> Unit = {}) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun OnboardingPreview() {
     MaterialTheme {

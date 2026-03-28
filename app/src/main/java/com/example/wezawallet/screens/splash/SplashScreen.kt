@@ -27,7 +27,7 @@ fun SplashScreen(onTimeout: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF2F80ED)), // Signature Blue
+            .background(Color(0xFF2F80ED)), // WezaWallet Signature Blue
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -48,7 +48,7 @@ fun SplashScreen(onTimeout: () -> Unit = {}) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Subtle loading indicator to show the app is "thinking"
+            // Subtle loading indicator
             CircularProgressIndicator(
                 color = Color.White.copy(alpha = 0.7f),
                 strokeWidth = 3.dp,
@@ -58,7 +58,7 @@ fun SplashScreen(onTimeout: () -> Unit = {}) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun SplashScreenPreview() {
     MaterialTheme {

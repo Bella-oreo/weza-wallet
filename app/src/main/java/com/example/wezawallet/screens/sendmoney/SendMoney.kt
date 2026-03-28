@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
@@ -34,7 +35,7 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("transactions")
-                .whereEqualTo("type", "Send") // Only show "Send" type in this screen's local history
+                .whereEqualTo("type", "Send")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, _ ->
                     history = snapshot?.documents?.mapNotNull {
@@ -64,7 +65,8 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
                 label = { Text("Amount KES") },
                 modifier = Modifier.fillMaxWidth(),
                 prefix = { Text("KES ") },
-                enabled = !isSending
+                enabled = !isSending,
+                singleLine = true
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -75,7 +77,8 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
                 label = { Text("Reason / Reference") },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("e.g. Rent, Dinner") },
-                enabled = !isSending
+                enabled = !isSending,
+                singleLine = true
             )
 
             Button(
@@ -84,12 +87,13 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
                     if (userId.isNotEmpty() && valAmount > 0) {
                         isSending = true
 
-                        // 1. Create TransactionRecord
+                        // 1. Create TransactionRecord with Timestamp
                         val record = TransactionRecord(
                             title = if (note.isEmpty()) "Sent Money" else note,
                             amount = valAmount,
                             type = "Send",
-                            isNegative = true
+                            isNegative = true,
+                            timestamp = Timestamp.now() // Added for sorting
                         )
 
                         // 2. Save to Transactions sub-collection
@@ -102,17 +106,18 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
                             .addOnCompleteListener {
                                 isSending = false
                                 amount = ""; note = ""
+                                // Optional: You can navigate back or stay to see the history update
                             }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                enabled = amount.isNotEmpty() && !isSending
+                enabled = amount.isNotEmpty() && !isSending,
+                shape = MaterialTheme.shapes.medium
             ) {
                 if (isSending) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color =
-                        Color.White)
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else {
-                    Text("Confirm Transfer")
+                    Text("Confirm Transfer", fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -127,7 +132,7 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
                 items(history) { tx ->
                     ListItem(
                         headlineContent = { Text(tx.title) },
-                        supportingContent = { Text("Today") },
+                        supportingContent = { Text("Completed") },
                         trailingContent = {
                             Text("-KES ${tx.amount}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                         }
@@ -139,7 +144,7 @@ fun SendMoneyScreen(onBack: () -> Unit = {}) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun SendMoneyPreview() {
     MaterialTheme {

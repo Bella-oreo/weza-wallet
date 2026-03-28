@@ -1,6 +1,5 @@
 package com.example.wezawallet.screens.home
 
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,11 +18,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.wezawallet.usermodel.TransactionRecord
 import com.example.wezawallet.usermodel.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -33,7 +34,8 @@ fun HomeScreen(
     onGoalClick: () -> Unit = {},
     onAddMoneyClick: () -> Unit = {},
     onSendMoneyClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    onViewAllClick: () -> Unit = {}
 ) {
     val db = FirebaseFirestore.getInstance()
     val auth = FirebaseAuth.getInstance()
@@ -42,18 +44,17 @@ fun HomeScreen(
     var userProfile by remember { mutableStateOf<User?>(null) }
     var transactions by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
 
-    // Fetching dynamic data based on Logged In User
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
-            // 1. Listen for Profile & Balance Changes
+            // Listen for User Profile & Balance
             db.collection("users").document(userId)
-                .addSnapshotListener { snapshot, error ->
+                .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
                         userProfile = snapshot.toObject(User::class.java)
                     }
                 }
 
-            // 2. Listen for the 5 Most Recent Transactions
+            // Listen for Recent Transactions (Limit 5)
             db.collection("users").document(userId).collection("transactions")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .limit(5)
@@ -66,44 +67,61 @@ fun HomeScreen(
     }
 
     Scaffold(containerColor = Color(0xFFF5F6FA)) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .fillMaxSize()
+        ) {
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 HomeHeader(userName = userProfile?.name ?: "User", onProfileClick = onProfileClick)
                 Spacer(modifier = Modifier.height(20.dp))
 
-                BalanceCard(balance = userProfile?.balance?.toDouble() ?: 0.0, tokenPoints = 0)
+                BalanceCard(balance = userProfile?.balance ?: 0.0)
 
                 Spacer(modifier = Modifier.height(24.dp))
-
                 QuickActionsRow(onAddMoneyClick, onSendMoneyClick, onGoalClick, onExpenseClick)
-
                 Spacer(modifier = Modifier.height(24.dp))
-                SectionHeader()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "Recent Transactions", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "View All",
+                        color = Color(0xFF2F80ED),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { onViewAllClick() }
+                    )
+                }
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Display dynamic transactions from Firebase
             items(transactions) { tx ->
-                val dateStr = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(tx.timestamp.toDate())
+                // Null-safe check for the Firestore Timestamp
+                val dateStr = tx.timestamp?.let {
+                    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                } ?: "Syncing..."
+
                 TransactionItem(
-                    Transaction(
-                        title = tx.title,
-                        date = dateStr,
-                        amount = tx.amount,
-                        isNegative = tx.isNegative
-                    )
+                    title = tx.title,
+                    date = dateStr,
+                    amount = tx.amount,
+                    type = tx.type,
+                    isNegative = tx.isNegative
                 )
             }
 
             if (transactions.isEmpty()) {
                 item {
                     Text(
-                        "No recent activity",
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        "No recent transactions",
                         color = Color.Gray,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -111,24 +129,25 @@ fun HomeScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 WeeklySpendingChart()
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
 
-// UI Components (BalanceCard, QuickActions, etc.) remain as you designed them
+/* ----------------------- UI COMPONENTS ----------------------- */
+
 @Composable
-fun BalanceCard(balance: Double, tokenPoints: Int) {
+fun BalanceCard(balance: Double) {
     Card(
-        modifier = Modifier.fillMaxWidth().height(150.dp),
+        modifier = Modifier.fillMaxWidth().height(140.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(brush = Brush.horizontalGradient(listOf(Color(0xFF2F80ED), Color(0xFF56CCF2))))
+                .background(brush = Brush.horizontalGradient(listOf(Color(0xFF009688), Color(0xFF26A69A))))
                 .padding(24.dp)
         ) {
             Column {
@@ -138,19 +157,65 @@ fun BalanceCard(balance: Double, tokenPoints: Int) {
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
-                Text(text = "Available Balance", color = Color.White.copy(alpha = 0.7f))
+                Text(text = "Available Balance", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
             }
         }
     }
 }
 
 @Composable
-fun QuickActionsRow(onAddMoneyClick: () -> Unit, onSendMoneyClick: () -> Unit, onGoalClick: () -> Unit, onExpenseClick: () -> Unit) {
+fun TransactionItem(title: String, date: String, amount: Double, type: String, isNegative: Boolean) {
+    val icon = when {
+        type == "Add" -> Icons.Default.AccountBalanceWallet
+        type == "Goal" -> Icons.Default.Star
+        title.contains("Rent", true) -> Icons.Default.Home
+        title.contains("Food", true) || title.contains("Lunch", true) -> Icons.Default.Restaurant
+        else -> Icons.Default.Payments
+    }
+
+    val statusColor = if (isNegative) Color(0xFFEB5757) else Color(0xFF27AE60)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = statusColor, modifier = Modifier.size(24.dp))
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(text = title, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(text = date, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+            }
+            Text(
+                text = "${if (isNegative) "-" else "+"} KES ${String.format(Locale.getDefault(), "%,.0f", amount)}",
+                color = statusColor,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+    }
+}
+
+@Composable
+fun QuickActionsRow(onAdd: () -> Unit, onSend: () -> Unit, onGoal: () -> Unit, onExpense: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        QuickActionItem("Add Money", Icons.Default.Add, Color(0xFFFFB800), onAddMoneyClick)
-        QuickActionItem("Send", Icons.AutoMirrored.Filled.Send, Color(0xFF2F80ED), onSendMoneyClick)
-        QuickActionItem("Goals", Icons.Default.Star, Color(0xFF27AE60), onGoalClick)
-        QuickActionItem("Expenses", Icons.Default.CardGiftcard, Color(0xFFEB5757), onExpenseClick)
+        QuickActionItem("Add Money", Icons.Default.Add, Color(0xFFFFB800), onAdd)
+        QuickActionItem("Send", Icons.AutoMirrored.Filled.Send, Color(0xFF2F80ED), onSend)
+        QuickActionItem("Goals", Icons.Default.Star, Color(0xFF27AE60), onGoal)
+        QuickActionItem("Expenses", Icons.Default.CardGiftcard, Color(0xFFEB5757), onExpense)
     }
 }
 
@@ -173,33 +238,14 @@ fun QuickActionItem(title: String, icon: ImageVector, color: Color, onClick: () 
 }
 
 @Composable
-fun TransactionItem(transaction: Transaction) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
-    ) {
-        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(44.dp).background(Color(0xFFF0F2F8), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (transaction.isNegative) Icons.Default.ArrowOutward else Icons.Default.ArrowDownward,
-                        contentDescription = null,
-                        tint = if (transaction.isNegative) Color(0xFFEB5757) else Color(0xFF27AE60),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(text = transaction.title, fontWeight = FontWeight.Bold)
-                    Text(text = transaction.date, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                }
-            }
-            Text(
-                text = "${if (transaction.isNegative) "-" else "+"} KES ${String.format(Locale.getDefault(), "%,.0f", transaction.amount)}",
-                color = if (transaction.isNegative) Color(0xFFEB5757) else Color(0xFF27AE60),
-                fontWeight = FontWeight.ExtraBold
-            )
+fun HomeHeader(userName: String, onProfileClick: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column {
+            Text(text = "WezaWallet Dashboard", style = MaterialTheme.typography.labelLarge, color = Color.Gray)
+            Text(text = "Hello, $userName!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
+        IconButton(onClick = onProfileClick) {
+            Icon(Icons.Default.AccountCircle, "Profile", modifier = Modifier.size(36.dp), tint = Color(0xFF2F80ED))
         }
     }
 }
@@ -219,12 +265,11 @@ fun WeeklySpendingChart() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
             ) {
-                val bars = listOf(0.4f, 0.6f, 0.3f, 0.5f, 0.4f, 0.7f, 0.9f)
-                bars.forEach { heightRatio ->
+                listOf(0.4f, 0.6f, 0.3f, 0.5f, 0.4f, 0.7f, 0.9f).forEach { height ->
                     Box(
                         modifier = Modifier
                             .width(16.dp)
-                            .fillMaxHeight(heightRatio)
+                            .fillMaxHeight(height)
                             .background(Color(0xFF2F80ED).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                     )
                 }
@@ -233,30 +278,9 @@ fun WeeklySpendingChart() {
     }
 }
 
-@Composable
-fun HomeHeader(userName: String, onProfileClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column {
-            Text(text = "WezaWallet Dashboard", style = MaterialTheme.typography.labelLarge, color = Color.Gray)
-            Text(text = "Hello, $userName!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        }
-        IconButton(onClick = onProfileClick) {
-            Icon(imageVector = Icons.Default.AccountCircle, contentDescription = "Profile", modifier = Modifier.size(36.dp), tint = Color(0xFF2F80ED))
-        }
-    }
-}
+/* ----------------------- PREVIEW ----------------------- */
 
-@Composable
-fun SectionHeader() {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(text = "Recent Transactions", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-        Text(text = "View All", color = Color(0xFF2F80ED), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-data class Transaction(val title: String, val date: String, val amount: Double, val isNegative: Boolean)
-
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {

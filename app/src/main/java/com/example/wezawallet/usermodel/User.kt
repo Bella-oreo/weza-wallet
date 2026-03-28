@@ -2,6 +2,7 @@ package com.example.wezawallet.usermodel
 
 data class User(
     val name: String = "",
-    val balance: Int = 0,
-    val currency: String = "KES"
+    val email: String = "",
+    val balance: Double = 0.0,
+    val profilePic: String = ""
 )

@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+
+// Import the Screens - If these stay red, it means the SCREEN files have internal errors
 import com.example.wezawallet.screens.splash.SplashScreen
 import com.example.wezawallet.screens.onboarding.OnboardingScreen
 import com.example.wezawallet.screens.login.LoginScreen
@@ -13,6 +15,7 @@ import com.example.wezawallet.screens.sendmoney.SendMoneyScreen
 import com.example.wezawallet.screens.expense.ExpenseScreen
 import com.example.wezawallet.screens.goals.GoalScreen
 import com.example.wezawallet.screens.profile.ProfileScreen
+import com.example.wezawallet.screens.history.TransactionHistoryScreen
 
 @Composable
 fun AppNavHost() {
@@ -22,6 +25,7 @@ fun AppNavHost() {
         navController = navController,
         startDestination = Routes.SPLASH
     ) {
+        // 1. Splash Screen
         composable(Routes.SPLASH) {
             SplashScreen(onTimeout = {
                 navController.navigate(Routes.ONBOARDING) {
@@ -30,12 +34,14 @@ fun AppNavHost() {
             })
         }
 
+        // 2. Onboarding
         composable(Routes.ONBOARDING) {
             OnboardingScreen(onGetStartedClick = {
                 navController.navigate(Routes.LOGIN)
             })
         }
 
+        // 3. Login
         composable(Routes.LOGIN) {
             LoginScreen(onLoginSuccess = {
                 navController.navigate(Routes.HOME) {
@@ -44,22 +50,24 @@ fun AppNavHost() {
             })
         }
 
+        // 4. Dashboard (Home)
         composable(Routes.HOME) {
             HomeScreen(
                 onExpenseClick = { navController.navigate(Routes.EXPENSES) },
                 onGoalClick = { navController.navigate(Routes.GOALS) },
                 onAddMoneyClick = { navController.navigate(Routes.ADD_MONEY) },
                 onSendMoneyClick = { navController.navigate(Routes.SEND_MONEY) },
-                onProfileClick = { navController.navigate(Routes.PROFILE) }
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+                onViewAllClick = { navController.navigate(Routes.HISTORY) }
             )
         }
 
+        // 5. Functional Screens
         composable(Routes.ADD_MONEY) {
             AddMoneyScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.SEND_MONEY) {
-            // FIXED: Changed onBackClick to onBack
             SendMoneyScreen(onBack = { navController.popBackStack() })
         }
 
@@ -71,21 +79,22 @@ fun AppNavHost() {
             GoalScreen(onBack = { navController.popBackStack() })
         }
 
+        composable(Routes.HISTORY) {
+            TransactionHistoryScreen(onBack = { navController.popBackStack() })
+        }
+
+        // 6. Profile & Logout
         composable(Routes.PROFILE) {
             ProfileScreen(
                 onHistoryClick = {
-                    // This will take them to your transaction history/expenses
-                    navController.navigate(Routes.EXPENSES)
+                    navController.navigate(Routes.HISTORY)
                 },
                 onLogoutClick = {
                     navController.navigate(Routes.LOGIN) {
-                        // This clears the 'Home' and 'Profile' from the backstack
-                        // so they can't 'Back' button their way back in after logging out
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
                 }
             )
         }
-
     }
 }

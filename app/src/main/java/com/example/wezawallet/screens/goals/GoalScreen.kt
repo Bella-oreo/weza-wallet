@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -33,7 +34,6 @@ fun GoalScreen(onBack: () -> Unit = {}) {
     var goals by remember { mutableStateOf<List<SavingsGoal>>(emptyList()) }
     var showDialog by remember { mutableStateOf(false) }
 
-    // Live sync with Firestore using the dynamic userId
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("goals")
@@ -57,7 +57,7 @@ fun GoalScreen(onBack: () -> Unit = {}) {
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
             if (goals.isEmpty()) {
                 Text(
                     "No goals yet. Start saving for something big!",
@@ -78,7 +78,6 @@ fun GoalScreen(onBack: () -> Unit = {}) {
                             Text(goal.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Visual Progress Bar
                             LinearProgressIndicator(
                                 progress = { progress },
                                 modifier = Modifier.fillMaxWidth().height(8.dp),
@@ -98,9 +97,10 @@ fun GoalScreen(onBack: () -> Unit = {}) {
 
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier.fillMaxWidth().height(55.dp)
+                modifier = Modifier.fillMaxWidth().height(55.dp),
+                shape = MaterialTheme.shapes.medium
             ) {
-                Text("Add New Goal")
+                Text("Add New Goal", fontWeight = FontWeight.Bold)
             }
         }
 
@@ -108,23 +108,24 @@ fun GoalScreen(onBack: () -> Unit = {}) {
             AddGoalDialog(
                 onDismiss = { showDialog = false },
                 onConfirm = { name, target ->
-                    if (userId.isNotEmpty()) {
+                    if (userId.isNotEmpty() && name.isNotEmpty()) {
                         val targetVal = target.toDoubleOrNull() ?: 0.0
+
+                        // 1. Save Goal
                         val goalData = mapOf(
                             "name" to name,
                             "targetAmount" to targetVal,
                             "currentAmount" to 0.0
                         )
-
-                        // 1. Save Goal
                         db.collection("users").document(userId).collection("goals").add(goalData)
 
-                        // 2. Record in Transactions so it shows on Dashboard
+                        // 2. Record in Transactions with Timestamp
                         val record = TransactionRecord(
-                            title = "Started Goal: $name",
+                            title = "New Goal: $name",
                             amount = targetVal,
                             type = "Goal",
-                            isNegative = false // Just a notification of a new goal
+                            isNegative = false,
+                            timestamp = Timestamp.now() // Added for sorting
                         )
                         db.collection("users").document(userId).collection("transactions").add(record)
 
@@ -150,12 +151,14 @@ fun AddGoalDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("What are you saving for?") },
-                    placeholder = { Text("e.g. New Laptop") }
+                    placeholder = { Text("e.g. New Laptop") },
+                    singleLine = true
                 )
                 OutlinedTextField(
                     value = target,
-                    onValueChange = { target = it },
-                    label = { Text("Target Amount (KES)") }
+                    onValueChange = { if (it.all { char -> char.isDigit() }) target = it },
+                    label = { Text("Target Amount (KES)") },
+                    singleLine = true
                 )
             }
         },
@@ -168,7 +171,7 @@ fun AddGoalDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
     )
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun GoalScreenPreview() {
     MaterialTheme { GoalScreen() }

@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.wezawallet.usermodel.TransactionRecord
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
@@ -19,8 +20,6 @@ import com.google.firebase.firestore.FieldValue
 fun AddMoneyScreen(onBack: () -> Unit = {}) {
     val db = FirebaseFirestore.getInstance()
     val auth = FirebaseAuth.getInstance()
-
-    // Get the dynamic User ID from the logged-in user
     val userId = auth.currentUser?.uid ?: ""
 
     var amount by remember { mutableStateOf("") }
@@ -71,16 +70,17 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                     if (userId.isNotEmpty() && value > 0) {
                         isSubmitting = true
 
-                        // 1. Update the main balance
+                        // 1. Update the main balance in Firestore
                         db.collection("users").document(userId)
                             .update("balance", FieldValue.increment(value))
 
-                        // 2. Create the Transaction Record for the "Recent Transactions" list
+                        // 2. Create the Transaction Record with a Timestamp for sorting
                         val record = TransactionRecord(
                             title = "Wallet Top-up",
                             amount = value,
                             type = "Add",
-                            isNegative = false // This ensures it stays Green/Positive
+                            isNegative = false,
+                            timestamp = Timestamp.now() // Added this for proper sorting
                         )
 
                         db.collection("users").document(userId)
@@ -88,11 +88,10 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                             .add(record)
                             .addOnSuccessListener {
                                 isSubmitting = false
-                                onBack() // Return to Home
+                                onBack()
                             }
                             .addOnFailureListener {
                                 isSubmitting = false
-                                // Optional: Handle error with a snackbar
                             }
                     }
                 },
@@ -124,7 +123,7 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun AddMoneyPreview() {
     MaterialTheme {

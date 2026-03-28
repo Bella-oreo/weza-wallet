@@ -11,5 +11,7 @@ object Routes {
     const val LOGIN = "login"
     const val SEND_MONEY = "send_money"
 
+    const val HISTORY = "history"
+
 
 }
