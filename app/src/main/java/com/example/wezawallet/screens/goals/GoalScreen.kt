@@ -1,6 +1,5 @@
 package com.example.wezawallet.screens.goals
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,19 +33,24 @@ fun GoalScreen(onBack: () -> Unit = {}) {
     val auth = FirebaseAuth.getInstance()
     val userId = auth.currentUser?.uid ?: ""
 
+    // POINT 4: Gold Branding Colors
+    val goldPrimary = Color(0xFFFFB800)
+    val goldDark = Color(0xFFB8860B)
+
     var amount by remember { mutableStateOf("") }
     var goalName by remember { mutableStateOf("") }
     var goalHistory by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
     var isSaving by remember { mutableStateOf(false) }
 
-    // IMPROVEMENT 6: Specific "Goal" activity history
+    // POINT 6: Real-time listener for "Goal" transactions
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("transactions")
                 .whereEqualTo("type", "Goal")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(5)
-                .addSnapshotListener { snapshot, _ ->
+                .limit(10)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) return@addSnapshotListener
                     goalHistory = snapshot?.documents?.mapNotNull {
                         it.toObject(TransactionRecord::class.java)
                     } ?: emptyList()
@@ -72,17 +76,16 @@ fun GoalScreen(onBack: () -> Unit = {}) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            // IMPROVEMENT 4: Gold Branding for Goals
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFB800).copy(alpha = 0.05f)),
+                colors = CardDefaults.cardColors(containerColor = goldPrimary.copy(alpha = 0.08f)),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "What are you saving for?",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFFB8860B) // Darker gold for text readability
+                        color = goldDark,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -90,7 +93,7 @@ fun GoalScreen(onBack: () -> Unit = {}) {
                         value = goalName,
                         onValueChange = { goalName = it },
                         label = { Text("Goal Name") },
-                        placeholder = { Text("e.g. New Laptop, Vacation") },
+                        placeholder = { Text("e.g. New Laptop") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         enabled = !isSaving
@@ -107,8 +110,8 @@ fun GoalScreen(onBack: () -> Unit = {}) {
                         singleLine = true,
                         enabled = !isSaving,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFFFB800),
-                            focusedLabelColor = Color(0xFFB8860B)
+                            focusedBorderColor = goldPrimary,
+                            focusedLabelColor = goldDark
                         )
                     )
                 }
@@ -120,80 +123,85 @@ fun GoalScreen(onBack: () -> Unit = {}) {
                     if (userId.isNotEmpty() && valAmount > 0) {
                         isSaving = true
                         val record = TransactionRecord(
-                            title = "Goal: ${if (goalName.isEmpty()) "Savings" else goalName}",
+                            title = if (goalName.isEmpty()) "Savings" else "Goal: $goalName",
                             amount = valAmount,
                             type = "Goal",
-                            isNegative = true, // It deducts from wallet to move to "Goals"
+                            isNegative = true,
                             timestamp = Timestamp.now()
                         )
 
                         db.collection("users").document(userId).collection("transactions").add(record)
-                        db.collection("users").document(userId)
-                            .update("balance", FieldValue.increment(-valAmount))
-                            .addOnCompleteListener {
-                                isSaving = false
-                                amount = ""; goalName = ""
+                            .addOnSuccessListener {
+                                db.collection("users").document(userId)
+                                    .update("balance", FieldValue.increment(-valAmount))
+                                    .addOnSuccessListener {
+                                        isSaving = false
+                                        amount = ""; goalName = ""
+                                    }
                             }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = amount.isNotEmpty() && !isSaving,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)), // Gold Button
+                colors = ButtonDefaults.buttonColors(containerColor = goldPrimary),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 if (isSaving) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else {
-                    Icon(Icons.Default.Star, null)
+                    Icon(Icons.Default.Star, null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Save Toward Goal", fontWeight = FontWeight.Bold)
+                    Text("Save Toward Goal", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // RECENT GOAL CONTRIBUTIONS (Point 6)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.History, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.History, null, tint = Color.Gray)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Recent Contributions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Recent Goal Activity", fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             if (goalHistory.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text("No goal activity yet.", color = Color.Gray)
                 }
-            }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(goalHistory) { tx ->
+                        val dateStr = tx.timestamp?.let {
+                            SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                        } ?: ""
 
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(goalHistory) { tx ->
-                    val dateStr = tx.timestamp?.let {
-                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
-                    } ?: ""
-
-                    ListItem(
-                        headlineContent = { Text(tx.title, fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text(dateStr) },
-                        trailingContent = {
-                            Text(
-                                "KES ${String.format("%,.0f", tx.amount)}",
-                                color = Color(0xFFFFB800),
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                    HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.4f))
+                        ListItem(
+                            headlineContent = { Text(tx.title, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text(dateStr) },
+                            trailingContent = {
+                                Text(
+                                    "KES ${String.format("%,.0f", tx.amount)}",
+                                    color = goldDark,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        )
+                        HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.4f))
+                    }
                 }
             }
         }
     }
 }
 
+// --- PREVIEW SECTION ---
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-fun GoalPreview() {
-    MaterialTheme { GoalScreen() }
+fun GoalScreenPreview() {
+    // We wrap it in a Surface to ensure the background is white in the preview
+    Surface(color = MaterialTheme.colorScheme.background) {
+        GoalScreen()
+    }
 }

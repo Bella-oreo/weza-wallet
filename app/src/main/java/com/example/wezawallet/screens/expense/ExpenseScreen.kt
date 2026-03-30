@@ -1,6 +1,5 @@
 package com.example.wezawallet.screens.expense
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +45,9 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // POINT 2: Expense Red Branding
+    val expenseRed = Color(0xFFEB5757)
+
     var expenseCategories by remember { mutableStateOf<List<ExpenseCategory>>(emptyList()) }
     var recentPaidExpenses by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
     var showDialog by remember { mutableStateOf(false) }
@@ -58,7 +61,7 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
 
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
-            // 1. Listen for Active Expense Plans
+            // 1. Listen for Active Expense Plans (Current obligations)
             db.collection("users").document(userId).collection("expenses")
                 .addSnapshotListener { snapshot, _ ->
                     expenseCategories = snapshot?.documents?.mapNotNull { doc ->
@@ -66,11 +69,11 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                     } ?: emptyList()
                 }
 
-            // 2. IMPROVEMENT 6: Listen for Recently Paid Expenses (History)
+            // 2. POINT 6: Listen for Recently Paid Expenses (Filtered History)
             db.collection("users").document(userId).collection("transactions")
                 .whereEqualTo("type", "Expense")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(5)
+                .limit(8) // Show up to 8 recent expenses
                 .addSnapshotListener { snapshot, _ ->
                     recentPaidExpenses = snapshot?.documents?.mapNotNull {
                         it.toObject(TransactionRecord::class.java)
@@ -114,11 +117,19 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
+                if (expenseCategories.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
+                            Text("No pending expenses.", color = Color.Gray, fontSize = 14.sp)
+                        }
+                    }
+                }
+
                 items(expenseCategories) { expense ->
                     val dueDay = expense.dueDate.filter { it.isDigit() }.toIntOrNull() ?: 0
                     val isOverdue = dueDay != 0 && today > dueDay
 
-                    // IMPROVEMENT 2: Use Red-tint for overdue/money-out branding
+                    // Card with Red-tint if Overdue
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -130,15 +141,13 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                         elevation = CardDefaults.cardElevation(2.dp)
                     ) {
                         Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(expense.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 Text("KES ${String.format("%,.0f", expense.amount)}", color = Color.Gray)
+
                                 if (expense.dueDate.isNotEmpty()) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         if (isOverdue) Icon(
@@ -157,6 +166,7 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                                 }
                             }
 
+                            // Marking as Paid
                             Checkbox(
                                 checked = false,
                                 colors = CheckboxDefaults.colors(checkedColor = Color(0xFF27AE60)),
@@ -170,14 +180,10 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                                             timestamp = Timestamp.now()
                                         )
 
-                                        db.collection("users").document(userId)
-                                            .collection("transactions").add(record)
-
-                                        db.collection("users").document(userId)
-                                            .update("balance", FieldValue.increment(-expense.amount))
-
-                                        db.collection("users").document(userId)
-                                            .collection("expenses").document(expense.id).delete()
+                                        // Update Firestore
+                                        db.collection("users").document(userId).collection("transactions").add(record)
+                                        db.collection("users").document(userId).update("balance", FieldValue.increment(-expense.amount))
+                                        db.collection("users").document(userId).collection("expenses").document(expense.id).delete()
 
                                         scope.launch {
                                             snackbarHostState.showSnackbar("Payment Recorded & Balance Updated!")
@@ -189,15 +195,15 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                     }
                 }
 
-                // IMPROVEMENT 6: Recent Paid Section
+                // POINT 6: Recent Paid Section
                 if (recentPaidExpenses.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.History, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "Recently Paid",
+                                "Recent Spending History",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -207,12 +213,22 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
 
                     items(recentPaidExpenses) { tx ->
                         ListItem(
-                            headlineContent = { Text(tx.title, fontSize = 14.sp) },
+                            headlineContent = { Text(tx.title, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                            supportingContent = {
+                                Text(
+                                    text = tx.timestamp?.toDate()?.let {
+                                        java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(it)
+                                    } ?: "",
+                                    fontSize = 12.sp
+                                )
+                            },
                             trailingContent = {
+                                // POINT 2: RED for money going out
                                 Text(
                                     "-KES ${String.format("%,.0f", tx.amount)}",
-                                    color = Color(0xFFEB5757),
-                                    fontWeight = FontWeight.Bold
+                                    color = expenseRed,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -222,58 +238,64 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            // RED Branding for Expense Action
+            // RED Branding Action Button
             Button(
                 onClick = { showDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 16.dp)
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEB5757)),
+                colors = ButtonDefaults.buttonColors(containerColor = expenseRed),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Text("+ Plan New Expense", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Icon(Icons.Default.Add, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Plan New Expense", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
 
+        // Dialog for adding new expense plans
         if (showDialog) {
             AlertDialog(
                 onDismissRequest = { showDialog = false },
-                title = { Text("Add Monthly Plan") },
+                title = { Text("Add Monthly Plan", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = nameInput,
                             onValueChange = { nameInput = it },
                             label = { Text("Expense Name") },
+                            placeholder = { Text("e.g. Rent, Electricity") },
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = amountInput,
-                            onValueChange = { amountInput = it },
+                            onValueChange = { if (it.all { c -> c.isDigit() }) amountInput = it },
                             label = { Text("Amount KES") },
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = dateInput,
                             onValueChange = { dateInput = it },
-                            label = { Text("Due Day (e.g. 5)") },
+                            label = { Text("Due Day (1-31)") },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 },
                 confirmButton = {
-                    Button(onClick = {
-                        if (userId.isNotEmpty() && nameInput.isNotEmpty()) {
-                            val data = mapOf(
-                                "name" to nameInput,
-                                "amount" to (amountInput.toDoubleOrNull() ?: 0.0),
-                                "dueDate" to dateInput
-                            )
-                            db.collection("users").document(userId).collection("expenses").add(data)
-                            nameInput = ""; amountInput = ""; dateInput = ""; showDialog = false
-                        }
-                    }) { Text("Save Plan") }
+                    Button(
+                        colors = ButtonDefaults.buttonColors(containerColor = expenseRed),
+                        onClick = {
+                            if (userId.isNotEmpty() && nameInput.isNotEmpty()) {
+                                val data = mapOf(
+                                    "name" to nameInput,
+                                    "amount" to (amountInput.toDoubleOrNull() ?: 0.0),
+                                    "dueDate" to dateInput
+                                )
+                                db.collection("users").document(userId).collection("expenses").add(data)
+                                nameInput = ""; amountInput = ""; dateInput = ""; showDialog = false
+                            }
+                        }) { Text("Save Plan") }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDialog = false }) { Text("Cancel") }
@@ -286,7 +308,7 @@ fun ExpenseScreen(onBack: () -> Unit = {}) {
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun ExpensePreview() {
-    MaterialTheme {
+    Surface(color = MaterialTheme.colorScheme.background) {
         ExpenseScreen()
     }
 }

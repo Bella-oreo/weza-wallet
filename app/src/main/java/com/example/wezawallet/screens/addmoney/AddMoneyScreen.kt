@@ -1,12 +1,12 @@
 package com.example.wezawallet.screens.addmoney
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,17 +33,20 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
     val auth = FirebaseAuth.getInstance()
     val userId = auth.currentUser?.uid ?: ""
 
+    // POINT 3: Money In Branding (Green Accent)
+    val depositGreen = Color(0xFF27AE60)
+
     var amount by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var recentTopUps by remember { mutableStateOf<List<TransactionRecord>>(emptyList()) }
 
-    // IMPROVEMENT 6: Fetch recent "Add" transactions for this specific screen
+    // POINT 6: Fetch recent "Add" transactions for this specific screen
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) {
             db.collection("users").document(userId).collection("transactions")
                 .whereEqualTo("type", "Add")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(5)
+                .limit(8)
                 .addSnapshotListener { snapshot, _ ->
                     recentTopUps = snapshot?.documents?.mapNotNull {
                         it.toObject(TransactionRecord::class.java)
@@ -70,17 +73,18 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                 .padding(padding)
                 .padding(24.dp)
         ) {
-            // Money In Branding (Green Accent)
+            // Money In Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF27AE60).copy(alpha = 0.05f)),
+                colors = CardDefaults.cardColors(containerColor = depositGreen.copy(alpha = 0.05f)),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Enter Amount to Deposit",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFF27AE60)
+                        color = depositGreen,
+                        fontWeight = FontWeight.Bold
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -88,15 +92,15 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { if (it.all { char -> char.isDigit() }) amount = it },
-                        label = { Text("KES Amount") },
+                        label = { Text("Amount") },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("e.g. 1000") },
                         prefix = { Text("KES ") },
                         singleLine = true,
                         enabled = !isSubmitting,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF27AE60),
-                            focusedLabelColor = Color(0xFF27AE60)
+                            focusedBorderColor = depositGreen,
+                            focusedLabelColor = depositGreen
                         )
                     )
                 }
@@ -104,7 +108,7 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // IMPROVEMENT 3: Green "Confirm" Button
+            // POINT 3: Green "Confirm" Button
             Button(
                 onClick = {
                     val value = amount.toDoubleOrNull() ?: 0.0
@@ -118,7 +122,7 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                             timestamp = Timestamp.now()
                         )
 
-                        // Atomic Update: Balance + Transaction
+                        // Atomic Update
                         db.collection("users").document(userId)
                             .update("balance", FieldValue.increment(value))
 
@@ -127,30 +131,33 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
                             .add(record)
                             .addOnSuccessListener {
                                 isSubmitting = false
-                                amount = "" // Clear field instead of closing to show history update
+                                amount = ""
                             }
+                            .addOnFailureListener { isSubmitting = false }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = amount.isNotEmpty() && amount != "0" && !isSubmitting,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF27AE60)),
+                colors = ButtonDefaults.buttonColors(containerColor = depositGreen),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 if (isSubmitting) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else {
-                    Text("Confirm Top Up", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Icon(Icons.Default.Add, null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Confirm Top Up", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // RECENT TOP-UPS SECTION (Point 6)
+            // RECENT TOP-UPS SECTION
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.History, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    "Recent Top-ups",
+                    "Top-up History",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -159,38 +166,42 @@ fun AddMoneyScreen(onBack: () -> Unit = {}) {
             Spacer(modifier = Modifier.height(12.dp))
 
             if (recentTopUps.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                    Text("No recent top-ups found.", color = Color.Gray)
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Text("No recent top-ups found.", color = Color.Gray, fontSize = 14.sp)
                 }
-            }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(recentTopUps) { tx ->
+                        val dateStr = tx.timestamp?.let {
+                            SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
+                        } ?: ""
 
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(recentTopUps) { tx ->
-                    val dateStr = tx.timestamp?.let {
-                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(it.toDate())
-                    } ?: ""
-
-                    ListItem(
-                        headlineContent = { Text("Funds Added", fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text(dateStr) },
-                        trailingContent = {
-                            Text(
-                                "+KES ${String.format("%,.0f", tx.amount)}",
-                                color = Color(0xFF27AE60),
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                    HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.4f))
+                        ListItem(
+                            headlineContent = { Text(tx.title, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text(dateStr) },
+                            trailingContent = {
+                                Text(
+                                    "+KES ${String.format("%,.0f", tx.amount)}",
+                                    color = depositGreen,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.4f))
+                    }
                 }
             }
         }
     }
 }
 
+// --- PREVIEW SECTION ---
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun AddMoneyPreview() {
-    MaterialTheme { AddMoneyScreen() }
+    Surface(color = MaterialTheme.colorScheme.background) {
+        AddMoneyScreen()
+    }
 }

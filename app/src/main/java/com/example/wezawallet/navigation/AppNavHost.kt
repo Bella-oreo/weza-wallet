@@ -5,7 +5,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
-// Import the Screens - If these stay red, it means the SCREEN files have internal errors
 import com.example.wezawallet.screens.splash.SplashScreen
 import com.example.wezawallet.screens.onboarding.OnboardingScreen
 import com.example.wezawallet.screens.login.LoginScreen
@@ -83,14 +82,15 @@ fun AppNavHost() {
             TransactionHistoryScreen(onBack = { navController.popBackStack() })
         }
 
-        // 6. Profile & Logout
+        // 6. Profile & Logout - UPDATED NAMES TO MATCH ProfileScreen.kt
         composable(Routes.PROFILE) {
             ProfileScreen(
-                onHistoryClick = {
-                    navController.navigate(Routes.HISTORY)
+                onBack = {
+                    navController.popBackStack()
                 },
                 onLogoutClick = {
                     navController.navigate(Routes.LOGIN) {
+                        // Clears everything up to Home so user can't "back" into the wallet
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
                 }

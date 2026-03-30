@@ -7,7 +7,6 @@ plugins {
 
 android {
     namespace = "com.example.wezawallet"
-    // Set to 36 to satisfy the requirements of your current library versions
     compileSdk = 36
 
     defaultConfig {
@@ -69,7 +68,10 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
 
-    // Image Loading
+    // --- ADDED THIS LINE TO FIX STORAGE ERRORS ---
+    implementation("com.google.firebase:firebase-storage")
+
+    // Image Loading (Coil) - Kept only the latest version
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Testing
